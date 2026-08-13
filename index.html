@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Noventra — Signal Rush</title>
+<style>
+:root{--bg:#070b12;--panel:#0d1420;--line:#1b2a3d;--green:#43f59a;--cyan:#46d9ff;--red:#ff5577;--text:#eef7ff;--muted:#8292a8}
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:Inter,system-ui,Arial,sans-serif}
+body{display:flex;justify-content:center}.app{width:100%;max-width:520px;height:100%;position:relative;overflow:hidden;background:radial-gradient(circle at 50% 15%,#10253a 0,#070b12 42%)}
+header{height:72px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);background:#08101ae8;backdrop-filter:blur(10px);position:relative;z-index:5}
+.brand{display:flex;align-items:center;gap:10px}.logo{width:40px;height:40px;border:1px solid #2a8060;border-radius:12px;display:grid;place-items:center;color:var(--green);font-weight:900;background:#0b1c18;box-shadow:0 0 24px #43f59a22}.brand b{font-size:15px;letter-spacing:.5px}.brand small{display:block;color:var(--muted);font-size:10px;margin-top:2px}
+.stat{text-align:right}.stat span{display:block;color:var(--green);font-weight:800;font-size:18px}.stat small{color:var(--muted);font-size:10px}
+#game{position:absolute;inset:72px 0 82px;width:100%;height:calc(100% - 154px)}
+.hud{position:absolute;top:88px;left:14px;right:14px;z-index:4;display:flex;gap:8px}.pill{flex:1;padding:9px 10px;background:#0b131eD9;border:1px solid var(--line);border-radius:12px}.pill small{display:block;color:var(--muted);font-size:9px;text-transform:uppercase;letter-spacing:1px}.pill b{font-size:16px}.energy{margin-top:5px;height:4px;border-radius:9px;background:#182333;overflow:hidden}.energy i{display:block;height:100%;width:100%;background:var(--green);transition:width .2s}
+.overlay{position:absolute;inset:72px 0 82px;z-index:6;display:grid;place-items:center;padding:24px;background:#05090fc7;backdrop-filter:blur(4px)}.card{width:min(390px,100%);padding:26px;border:1px solid #25405a;border-radius:22px;background:#0a111beF;box-shadow:0 20px 70px #0008;text-align:center}.card h1{margin:0 0 8px;font-size:29px}.card p{color:var(--muted);line-height:1.5;font-size:13px}.accent{color:var(--green)}button{border:0;border-radius:13px;padding:13px 18px;font-weight:800;cursor:pointer;color:#04110a;background:var(--green);width:100%;font-size:14px;margin-top:10px}button.secondary{background:#111c2a;color:var(--text);border:1px solid var(--line)}
+.hidden{display:none!important}
+footer{position:absolute;bottom:0;left:0;right:0;height:82px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:8px;background:#08101af2;border-top:1px solid var(--line);z-index:7}.hint{font-size:10px;color:var(--muted);line-height:1.35}.mini{width:auto;margin:0;padding:10px 14px;font-size:11px}
+.badge{display:inline-block;padding:5px 8px;border-radius:999px;background:#10251d;color:var(--green);font-size:10px;font-weight:800;margin-bottom:12px}
+#toast{position:absolute;top:82px;left:50%;transform:translateX(-50%) translateY(-15px);opacity:0;z-index:10;padding:9px 14px;border-radius:999px;background:#132234;border:1px solid #28445e;font-size:11px;transition:.25s;pointer-events:none}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+<div class="app">
+<header>
+  <div class="brand"><div class="logo">N</div><div><b>NOVENTRA</b><small>SIGNAL RUSH</small></div></div>
+  <div class="stat"><span id="best">0</span><small>BEST SCORE</small></div>
+</header>
+
+<div class="hud">
+  <div class="pill"><small>Score</small><b id="score">0</b></div>
+  <div class="pill"><small>Level</small><b id="level">1</b></div>
+  <div class="pill"><small>Energy</small><b id="energyText">100%</b><div class="energy"><i id="energyBar"></i></div></div>
+</div>
+
+<canvas id="game"></canvas>
+
+<div id="start" class="overlay">
+  <div class="card">
+    <div class="badge">TON • NOVENTRA NETWORK</div>
+    <h1>Catch the Signal</h1>
+    <p>Collect <span class="accent">green signals</span>, avoid red traps and survive as long as possible. Your best score is saved locally.</p>
+    <button id="startBtn">START MISSION</button>
+  </div>
+</div>
+
+<div id="gameover" class="overlay hidden">
+  <div class="card">
+    <div class="badge">MISSION COMPLETE</div>
+    <h1 id="finalTitle">Signal Lost</h1>
+    <p>Score: <strong id="finalScore">0</strong><br>Best: <strong id="finalBest">0</strong></p>
+    <button id="againBtn">PLAY AGAIN</button>
+    <button id="shareBtn" class="secondary">SHARE SCORE</button>
+  </div>
+</div>
+
+<div id="toast">+10 SIGNAL</div>
+
+<footer>
+  <div class="hint">Drag / move your finger<br>to control the Noventra core.</div>
+  <button class="mini" id="tgBtn">OPEN NOVENTRA</button>
+</footer>
+</div>
+
+<script>
+const tg = window.Telegram?.WebApp;
+if(tg){tg.ready();tg.expand();}
+
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+let W,H,dpr=1,playing=false,score=0,level=1,energy=100,last=0,spawn=0,objects=[],particles=[],pointer={x:0,y:0};
+let best=Number(localStorage.getItem('noventra_signal_best')||0);
+document.getElementById('best').textContent=best;
+
+function resize(){
+  dpr=Math.min(devicePixelRatio||1,2); W=canvas.clientWidth; H=canvas.clientHeight;
+  canvas.width=W*dpr;canvas.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0);
+  if(!pointer.x){pointer.x=W/2;pointer.y=H-70}
+}
+addEventListener('resize',resize);resize();
+
+function reset(){
+  score=0;level=1;energy=100;objects=[];particles=[];playing=true;last=performance.now();spawn=0;
+  pointer.x=W/2;pointer.y=H-70;
+  document.getElementById('score').textContent=0;
+  document.getElementById('level').textContent=1;
+  document.getElementById('start').classList.add('hidden');
+  document.getElementById('gameover').classList.add('hidden');
+  requestAnimationFrame(loop);
+}
+function move(e){
+  const r=canvas.getBoundingClientRect();
+  const p=e.touches?e.touches[0]:e;
+  pointer.x=Math.max(25,Math.min(W-25,p.clientX-r.left));
+  pointer.y=Math.max(35,Math.min(H-25,p.clientY-r.top));
+}
+canvas.addEventListener('pointermove',move);canvas.addEventListener('touchmove',e=>{move(e);e.preventDefault()},{passive:false});
+
+function spawnObj(){
+  const good=Math.random()>0.23;
+  objects.push({x:20+Math.random()*(W-40),y:-20,r:good?10+Math.random()*5:12+Math.random()*4,good,vy:85+level*15+Math.random()*45,rot:Math.random()*6.28});
+}
+function burst(x,y,good){
+  for(let i=0;i<good?10:16;i++) particles.push({x,y,vx:(Math.random()-.5)*150,vy:(Math.random()-.5)*150,life:.5,max:.5,good});
+}
+function endGame(){
+  playing=false;
+  if(score>best){best=score;localStorage.setItem('noventra_signal_best',best);}
+  document.getElementById('finalScore').textContent=score;
+  document.getElementById('finalBest').textContent=best;
+  document.getElementById('best').textContent=best;
+  document.getElementById('gameover').classList.remove('hidden');
+}
+function toast(text){
+  const t=document.getElementById('toast');t.textContent=text;t.classList.add('show');
+  clearTimeout(toast.timer);toast.timer=setTimeout(()=>t.classList.remove('show'),650);
+}
+function update(dt){
+  level=1+Math.floor(score/100);
+  energy=Math.max(0,energy-dt*(1.6+level*.12));
+  if(energy<=0){endGame();return}
+  spawn-=dt;
+  if(spawn<=0){spawn=Math.max(.22,.72-level*.035);spawnObj();}
+  const coreR=18;
+  for(let i=objects.length-1;i>=0;i--){
+    const o=objects[i];o.y+=o.vy*dt;o.rot+=dt*2;
+    const dx=o.x-pointer.x,dy=o.y-pointer.y;
+    if(dx*dx+dy*dy<(o.r+coreR)**2){
+      burst(o.x,o.y,o.good);objects.splice(i,1);
+      if(o.good){score+=10;energy=Math.min(100,energy+7);toast('+10 SIGNAL');}
+      else{score=Math.max(0,score-25);energy-=22;toast('TRAP −25');}
+      document.getElementById('score').textContent=score;
+      document.getElementById('level').textContent=level;
+      continue;
+    }
+    if(o.y>H+30)objects.splice(i,1);
+  }
+  for(let i=particles.length-1;i>=0;i--){let p=particles[i];p.life-=dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=70*dt;if(p.life<=0)particles.splice(i,1);}
+  document.getElementById('energyText').textContent=Math.round(energy)+'%';
+  document.getElementById('energyBar').style.width=energy+'%';
+}
+function draw(){
+  ctx.clearRect(0,0,W,H);
+  const g=ctx.createRadialGradient(pointer.x,pointer.y,0,pointer.x,pointer.y,180);g.addColorStop(0,'#43f59a12');g.addColorStop(1,'transparent');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  ctx.strokeStyle='#102033';ctx.lineWidth=1;
+  for(let y=0;y<H;y+=42){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+  for(let x=0;x<W;x+=42){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
+  for(const o of objects){
+    ctx.save();ctx.translate(o.x,o.y);ctx.rotate(o.rot);
+    ctx.shadowBlur=18;ctx.shadowColor=o.good?'#43f59a':'#ff5577';ctx.fillStyle=o.good?'#43f59a':'#ff5577';
+    ctx.beginPath();ctx.arc(0,0,o.r,0,Math.PI*2);ctx.fill();
+    ctx.shadowBlur=0;ctx.fillStyle='#06100b';ctx.font='bold 12px Arial';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText(o.good?'+':'×',0,1);ctx.restore();
+  }
+  for(const p of particles){ctx.globalAlpha=Math.max(0,p.life/p.max);ctx.fillStyle=p.good?'#43f59a':'#ff5577';ctx.fillRect(p.x,p.y,3,3);ctx.globalAlpha=1;}
+  const x=pointer.x,y=pointer.y;
+  ctx.save();ctx.translate(x,y);ctx.shadowBlur=25;ctx.shadowColor='#46d9ff';ctx.strokeStyle='#46d9ff';ctx.lineWidth=2;
+  ctx.beginPath();ctx.arc(0,0,19,0,Math.PI*2);ctx.stroke();ctx.beginPath();ctx.arc(0,0,7,0,Math.PI*2);ctx.stroke();
+  ctx.fillStyle='#46d9ff';ctx.fillRect(-2,-28,4,9);ctx.fillRect(-2,19,4,9);ctx.fillRect(-28,-2,9,4);ctx.fillRect(19,-2,9,4);ctx.restore();
+}
+function loop(now){if(!playing)return;const dt=Math.min((now-last)/1000,.035);last=now;update(dt);draw();if(playing)requestAnimationFrame(loop);}
+document.getElementById('startBtn').onclick=reset;
+document.getElementById('againBtn').onclick=reset;
+document.getElementById('shareBtn').onclick=()=>{
+  const text=`I scored ${score} in Noventra Signal Rush ⚡\nCan you beat me?`;
+  if(navigator.share)navigator.share({title:'Noventra Signal Rush',text});
+  else navigator.clipboard?.writeText(text).then(()=>toast('SCORE COPIED'));
+};
+document.getElementById('tgBtn').onclick=()=>{
+  if(tg)tg.openTelegramLink('https://t.me/NoventraNetwork');
+  else location.href='https://t.me/NoventraNetwork';
+};
+draw();
+</script>
+</body>
+</html>
